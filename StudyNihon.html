@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flashcard MCQ</title>
+
+<style>
+:root {
+  --green:#4caf50;
+  --red:#f44336;
+  --bg:#f5f5f5;
+  --card:#fff;
+}
+*{box-sizing:border-box;font-family:system-ui}
+body{margin:0;background:var(--bg);min-height:100vh;display:flex;flex-direction:column}
+header{background:#222;color:#fff;padding:12px}
+header input,header select,header button{
+  width:100%;padding:10px;margin-top:6px;font-size:16px
+}
+main{flex:1;display:flex;justify-content:center;align-items:center}
+.card{
+  width:90%;max-width:360px;
+  background:var(--card);
+  padding:32px 16px;
+  text-align:center;
+  font-size:32px;
+  border-radius:16px;
+  box-shadow:0 4px 12px rgba(0,0,0,.15)
+}
+.index-bar{text-align:center;font-size:14px}
+.index-bar span{cursor:pointer}
+#indexInput{display:none;width:80px;padding:6px}
+footer{
+  padding:12px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px
+}
+.option{
+  padding:14px;
+  border:none;
+  border-radius:12px;
+  font-size:16px;
+  background:#e0e0e0;
+}
+.option.correct{background:var(--green);color:#fff}
+.option.wrong{background:var(--red);color:#fff}
+.stats{text-align:center;font-size:14px;padding-bottom:10px}
+</style>
+</head>
+<body>
+
+<header>
+  <input type="file" id="fileInput" accept=".json">
+  <select id="swapMode">
+    <option value="kanji-reading">Kanji → Reading</option>
+    <option value="kanji-meaning">Kanji → Meaning</option>
+    <option value="reading-kanji">Reading → Kanji</option>
+    <option value="reading-meaning">Reading → Meaning</option>
+    <option value="meaning-kanji">Meaning → Kanji</option>
+    <option value="meaning-reading">Meaning → Reading</option>
+  </select>
+  <button id="resetBtn">Reset Progress (File Ini)</button>
+</header>
+
+<div class="index-bar">
+  <span id="indexLabel">0 / 0</span>
+  <input type="number" id="indexInput" min="1">
+</div>
+
+<main>
+  <div class="card" id="card">Upload JSON</div>
+</main>
+
+<footer id="options"></footer>
+
+<div class="stats">
+  ✔ <span id="correctCount">0</span> |
+  ✖ <span id="wrongCount">0</span>
+</div>
+
+<script>
+let data = [];
+let index = 0;
+let correct = 0;
+let wrong = 0;
+let swap = "kanji-reading";
+
+let fileKey = "";
+let currentFileName = "";
+
+const card = document.getElementById("card");
+const optionsEl = document.getElementById("options");
+const indexLabel = document.getElementById("indexLabel");
+const indexInput = document.getElementById("indexInput");
+
+function shuffle(arr){return arr.sort(()=>Math.random()-0.5)}
+
+function saveProgress(){
+  if(!fileKey) return;
+  localStorage.setItem(fileKey, JSON.stringify({
+    index, correct, wrong, swap
+  }));
+}
+
+function loadProgress(){
+
+  const saved = localStorage.getItem(fileKey);
+
+  // Jika belum pernah dibuka
+  if(!saved){
+    index = 0;
+    correct = 0;
+    wrong = 0;
+    saveProgress();
+    return;
+  }
+
+  const p = JSON.parse(saved);
+
+  correct = p.correct ?? 0;
+  wrong   = p.wrong ?? 0;
+  swap    = p.swap ?? swap;
+
+  // ===== LOGIC BARU =====
+  if(
+      p.index === 0 ||
+      (correct === 0 && wrong === 0)
+    ){
+      // Mulai dari awal
+      index = 0;
+  }
+  else{
+      // Lanjut previous + 1
+      index = (p.index ?? 0) + 1;
+  }
+
+  // Safety jika melewati panjang data
+  if(index >= data.length){
+    index = 0;
+  }
+
+  document.getElementById("swapMode").value = swap;
+}
+
+function render(){
+  if(!data.length) return;
+  if(index >= data.length) index = 0;
+
+  const [from,to] = swap.split("-");
+  const item = data[index];
+
+  card.textContent = item[from];
+  indexLabel.textContent = `${index+1} / ${data.length}`;
+  document.getElementById("correctCount").textContent = correct;
+  document.getElementById("wrongCount").textContent = wrong;
+
+  let answers = [item[to]];
+  while(answers.length < 4){
+    const r = data[Math.floor(Math.random()*data.length)][to];
+    if(!answers.includes(r)) answers.push(r);
+  }
+
+  optionsEl.innerHTML = "";
+  shuffle(answers).forEach(a=>{
+    const b = document.createElement("button");
+    b.className="option";
+    b.textContent=a;
+    b.onclick=()=>checkAnswer(b,a,item[to]);
+    optionsEl.appendChild(b);
+  });
+}
+
+function checkAnswer(btn,val,correctAns){
+  document.querySelectorAll(".option").forEach(b=>b.disabled=true);
+
+  if(val===correctAns){
+    btn.classList.add("correct");
+    correct++;
+  }else{
+    btn.classList.add("wrong");
+    wrong++;
+  }
+
+  saveProgress();
+  setTimeout(()=>{index++;render()},600);
+}
+
+/* ===== EVENTS ===== */
+
+fileInput.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if(!file) return;
+
+  currentFileName = file.name;
+  fileKey = "flashcard_" + file.name;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+
+    data = JSON.parse(reader.result);
+
+    if(!Array.isArray(data) || data.length < 4){
+      alert("JSON minimal 4 data");
+      return;
+    }
+
+    // RESET state dulu
+    index = 0;
+    correct = 0;
+    wrong = 0;
+
+    // Load progress jika ada
+    loadProgress();
+
+    render();
+  };
+
+  reader.readAsText(file);
+});
+
+swapMode.onchange=e=>{
+  swap=e.target.value;
+  saveProgress();
+  render();
+};
+
+resetBtn.onclick=()=>{
+  if(!fileKey) return;
+  localStorage.removeItem(fileKey);
+  index=0;correct=0;wrong=0;
+  render();
+};
+
+indexLabel.onclick=()=>{
+  indexInput.style.display="inline-block";
+  indexInput.value=index+1;
+  indexInput.focus();
+};
+
+indexInput.onchange=()=>{
+  const v=parseInt(indexInput.value);
+  if(v>=1 && v<=data.length){
+    index=v-1;
+    saveProgress();
+    render();
+  }
+  indexInput.style.display="none";
+};
+</script>
+
+</body>
+</html>

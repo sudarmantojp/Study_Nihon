@@ -1,1 +1,3 @@
-# Study_Nihon
+# Study Nihon
+
+Project uploaded via GitPush.
